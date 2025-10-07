@@ -4,15 +4,19 @@ from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
 from openai import OpenAI
+from sentence_transformers import SentenceTransformer
 import os
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import faiss
 
-# --- Initialize OpenAI Client ---
+# -------------------------------
+# OpenAI API key from Streamlit Secrets
+# -------------------------------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- Mock Project Data ---
+# -------------------------------
+# Mock Project Data
+# -------------------------------
 projects = [
     {
         "id": 1,
@@ -37,15 +41,17 @@ projects = [
     }
 ]
 
-# --- Streamlit UI ---
+# -------------------------------
+# Streamlit Page Setup
+# -------------------------------
 st.set_page_config(page_title="Rainbow Assistant", layout="wide")
 st.title("🌈 Rainbow Assistant — AI Project Manager & Knowledge Base")
 
 tabs = st.tabs(["🏠 Dashboard", "🤖 Project Assistant", "📅 Timeline Generator", "📚 Knowledge Base"])
 
-# ----------------------
+# -------------------------------
 # 1️⃣ DASHBOARD
-# ----------------------
+# -------------------------------
 with tabs[0]:
     st.header("Dashboard Overview")
     col1, col2, col3 = st.columns(3)
@@ -56,9 +62,9 @@ with tabs[0]:
     col3.metric("Next Deadline", upcoming_deadline.strftime("%Y-%m-%d"))
     st.write("Use the tabs to explore Assistant, Timeline, and Knowledge Base modules.")
 
-# ----------------------
+# -------------------------------
 # 2️⃣ PROJECT & SUPPORT ASSISTANT
-# ----------------------
+# -------------------------------
 with tabs[1]:
     st.header("🤖 Project & Support AI Assistant")
     project_options = [p["name"] for p in projects]
@@ -89,9 +95,9 @@ Generate a polite, professional reply.
         reply = response.choices[0].message.content
         st.success(reply)
 
-# ----------------------
+# -------------------------------
 # 3️⃣ SMART TIMELINE GENERATOR
-# ----------------------
+# -------------------------------
 with tabs[2]:
     st.header("📅 Smart Timeline Generator")
     features = st.text_area("List Project Features (comma separated)", "Landing Page, API, Dashboard")
@@ -122,42 +128,44 @@ with tabs[2]:
         fig = px.timeline(df_timeline, x_start="Start", x_end="End", y="Phase", color="Phase")
         st.plotly_chart(fig)
 
-# ----------------------
-# 4️⃣ DOCUMENTATION KNOWLEDGE BASE (SEMANTIC SEARCH)
-# ----------------------
+# -------------------------------
+# 4️⃣ DOCUMENTATION KNOWLEDGE BASE (Runtime Embeddings)
+# -------------------------------
 with tabs[3]:
     st.header("📚 Documentation Knowledge Base")
     st.subheader("Ask a question based on documentation")
     query = st.text_input("Customer Question", "How do I change language on HiStudy?")
     
+    # Load docs at runtime
+    doc_texts = []
+    doc_links = []
+    doc_files = [f for f in os.listdir("docs") if f.endswith(".txt")]
+    for file in doc_files:
+        with open(f"docs/{file}", "r") as f:
+            content = f.read()
+            if "Link:" in content:
+                link = content.split("Link:")[1].strip()
+                text = content.split("Link:")[0].strip()
+            else:
+                text = content
+                link = ""
+            doc_texts.append(text)
+            doc_links.append(link)
+    
+    # Compute embeddings at runtime
+    embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+    doc_embeddings = embed_model.encode(doc_texts, convert_to_numpy=True)
+    
+    # FAISS index
+    index = faiss.IndexFlatL2(doc_embeddings.shape[1])
+    index.add(doc_embeddings)
+    
     if st.button("Search & Generate Reply"):
-        # Load documents & embeddings
-        embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-        doc_texts, doc_links = [], []
-        for file in os.listdir("docs"):
-            with open(f"docs/{file}", "r") as f:
-                content = f.read()
-                if "Link:" in content:
-                    link = content.split("Link:")[1].strip()
-                    text = content.split("Link:")[0].strip()
-                else:
-                    text = content
-                    link = ""
-                doc_texts.append(text)
-                doc_links.append(link)
-
-        # Create embeddings & FAISS index
-        doc_embeddings = embed_model.encode(doc_texts, convert_to_numpy=True)
-        index = faiss.IndexFlatL2(doc_embeddings.shape[1])
-        index.add(doc_embeddings)
-
-        # Search for closest match
         query_embedding = embed_model.encode([query], convert_to_numpy=True)
         D, I = index.search(query_embedding, k=1)
         matched_text = doc_texts[I[0][0]]
         matched_link = doc_links[I[0][0]]
 
-        # Generate AI reply
         prompt = f"""
 You are a helpful support assistant. 
 Documentation section: {matched_text}
