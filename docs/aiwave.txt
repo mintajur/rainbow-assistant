@@ -1,0 +1,3 @@
+# Section: API Setup
+To setup AI API, follow the instructions in AIwave dashboard.
+Link: https://docs.yoursite.com/aiwave/api-setup
