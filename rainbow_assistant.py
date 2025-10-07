@@ -8,19 +8,27 @@ import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
+import torch
+
+# Force CPU and disable multiprocessing
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+torch.set_default_device("cpu")
 
 # -------------------------------
 # Hugging Face API Key from Streamlit Secrets
 # -------------------------------
-HF_API_KEY = st.secrets["HF_API_KEY"]
-st.write(HF_API_KEY[:6], "...")  # shows first 6 chars
+HF_API_KEY = st.secrets.get("HF_API_KEY", "No key found")
+st.write(f"HF_API_KEY: {HF_API_KEY[:6]}...")
 
-# Hugging Face text-generation pipeline
-generator = pipeline(
-    "text-generation",
-    model="TheBloke/vicuna-7B-1.1-HF",
-    use_auth_token=HF_API_KEY,
-)
+# Cache text-generation pipeline
+@st.cache_resource
+def load_generator():
+    return pipeline(
+        "text-generation",
+        model="distilgpt2",
+        token=HF_API_KEY,
+    )
+generator = load_generator()
 
 # -------------------------------
 # Mock Project Data
@@ -95,9 +103,12 @@ Customer question: {user_query}
 
 Generate a polite, professional reply.
 """
-        response = generator(prompt, max_new_tokens=100)
-        reply = response[0]['generated_text']
-        st.success(reply)
+        try:
+            with st.spinner("Generating reply..."):
+                response = generator(prompt, max_new_tokens=50)
+                st.success(response[0]['generated_text'])
+        except Exception as e:
+            st.error(f"Error generating reply: {str(e)}")
 
 # -------------------------------
 # 3️⃣ SMART TIMELINE GENERATOR
@@ -129,8 +140,9 @@ with tabs[2]:
         st.table(df_timeline)
         
         # Gantt chart
-        fig = px.timeline(df_timeline, x_start="Start", x_end="End", y="Phase", color="Phase")
-        st.plotly_chart(fig)
+        fig = px.timeline(df_timeline, x_start="Start", x_end="End", y="Phase")
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
 
 # -------------------------------
 # 4️⃣ DOCUMENTATION KNOWLEDGE BASE
@@ -140,37 +152,48 @@ with tabs[3]:
     st.subheader("Ask a question based on documentation")
     query = st.text_input("Customer Question", "How do I change language on HiStudy?")
     
-    # Load docs at runtime
-    doc_texts = []
-    doc_links = []
-    doc_files = [f for f in os.listdir("docs") if f.endswith(".txt")]
-    for file in doc_files:
-        with open(f"docs/{file}", "r") as f:
-            content = f.read()
-            if "Link:" in content:
-                link = content.split("Link:")[1].strip()
-                text = content.split("Link:")[0].strip()
-            else:
-                text = content
-                link = ""
-            doc_texts.append(text)
-            doc_links.append(link)
+    # Cache docs
+    @st.cache_data
+    def load_docs():
+        doc_texts = []
+        doc_links = []
+        doc_files = [f for f in os.listdir("docs") if f.endswith(".txt")]
+        for file in doc_files:
+            with open(f"docs/{file}", "r") as f:
+                content = f.read()
+                if "Link:" in content:
+                    link = content.split("Link:")[1].strip()
+                    text = content.split("Link:")[0].strip()
+                else:
+                    text = content
+                    link = ""
+                doc_texts.append(text)
+                doc_links.append(link)
+        return doc_texts, doc_links
+    doc_texts, doc_links = load_docs()
     
-    # Compute embeddings at runtime
-    embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-    doc_embeddings = embed_model.encode(doc_texts, convert_to_numpy=True)
+    # Cache embedding model
+    @st.cache_resource
+    def load_embed_model():
+        return SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+    embed_model = load_embed_model()
+    
+    # Compute embeddings
+    doc_embeddings = embed_model.encode(doc_texts, batch_size=8, convert_to_numpy=True)
     
     # FAISS index
     index = faiss.IndexFlatL2(doc_embeddings.shape[1])
     index.add(doc_embeddings)
     
     if st.button("Search & Generate Reply"):
-        query_embedding = embed_model.encode([query], convert_to_numpy=True)
-        D, I = index.search(query_embedding, k=1)
-        matched_text = doc_texts[I[0][0]]
-        matched_link = doc_links[I[0][0]]
-
-        prompt = f"""
+        try:
+            with st.spinner("Searching and generating reply..."):
+                query_embedding = embed_model.encode([query], convert_to_numpy=True)
+                D, I = index.search(query_embedding, k=1)
+                matched_text = doc_texts[I[0][0]]
+                matched_link = doc_links[I[0][0]]
+                
+                prompt = f"""
 You are a helpful support assistant. 
 Documentation section: {matched_text}
 
@@ -178,10 +201,9 @@ Customer question: {query}
 
 Generate a concise and polite reply including the link if available.
 """
-        response = generator(prompt, max_new_tokens=100)
-        reply = response[0]['generated_text']
-        st.success(reply)
-        if matched_link:
-            st.markdown(f"[📄 View Documentation]({matched_link})")
-
-
+                response = generator(prompt, max_new_tokens=50)
+                st.success(response[0]['generated_text'])
+                if matched_link:
+                    st.markdown(f"[📄 View Documentation]({matched_link})")
+        except Exception as e:
+            st.error(f"Error in Knowledge Base: {str(e)}")
