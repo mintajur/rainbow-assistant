@@ -3,16 +3,23 @@ import json
 from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
-from openai import OpenAI
-from sentence_transformers import SentenceTransformer
 import os
 import numpy as np
 import faiss
+from sentence_transformers import SentenceTransformer
+from transformers import pipeline
 
 # -------------------------------
-# OpenAI API key from Streamlit Secrets
+# Hugging Face API Key from Streamlit Secrets
 # -------------------------------
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+HF_API_KEY = st.secrets["HF_API_KEY"]
+
+# Hugging Face text-generation pipeline
+generator = pipeline(
+    "text-generation",
+    model="TheBloke/vicuna-7B-1.1-HF",
+    use_auth_token=HF_API_KEY,
+)
 
 # -------------------------------
 # Mock Project Data
@@ -87,12 +94,8 @@ Customer question: {user_query}
 
 Generate a polite, professional reply.
 """
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200
-        )
-        reply = response.choices[0].message.content
+        response = generator(prompt, max_new_tokens=100)
+        reply = response[0]['generated_text']
         st.success(reply)
 
 # -------------------------------
@@ -129,7 +132,7 @@ with tabs[2]:
         st.plotly_chart(fig)
 
 # -------------------------------
-# 4️⃣ DOCUMENTATION KNOWLEDGE BASE (Runtime Embeddings)
+# 4️⃣ DOCUMENTATION KNOWLEDGE BASE
 # -------------------------------
 with tabs[3]:
     st.header("📚 Documentation Knowledge Base")
@@ -174,12 +177,8 @@ Customer question: {query}
 
 Generate a concise and polite reply including the link if available.
 """
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200
-        )
-        reply = response.choices[0].message.content
+        response = generator(prompt, max_new_tokens=100)
+        reply = response[0]['generated_text']
         st.success(reply)
         if matched_link:
             st.markdown(f"[📄 View Documentation]({matched_link})")
