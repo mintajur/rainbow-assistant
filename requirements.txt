@@ -6,7 +6,3 @@ faiss-cpu
 numpy
 transformers
 torch
-huggingface-hub
-hf-xet
-tokenizers
-safetensors
