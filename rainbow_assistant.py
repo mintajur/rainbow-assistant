@@ -13,6 +13,7 @@ from transformers import pipeline
 # Hugging Face API Key from Streamlit Secrets
 # -------------------------------
 HF_API_KEY = st.secrets["HF_API_KEY"]
+st.write(HF_API_KEY[:6], "...")  # shows first 6 chars
 
 # Hugging Face text-generation pipeline
 generator = pipeline(
@@ -182,4 +183,5 @@ Generate a concise and polite reply including the link if available.
         st.success(reply)
         if matched_link:
             st.markdown(f"[📄 View Documentation]({matched_link})")
+
 
