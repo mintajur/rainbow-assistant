@@ -1,0 +1,34 @@
+from sentence_transformers import SentenceTransformer
+import numpy as np
+import os
+import json
+
+# Load model
+embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Load docs
+doc_texts = []
+doc_links = []
+for file in os.listdir("docs"):
+    with open(f"docs/{file}", "r") as f:
+        content = f.read()
+        if "Link:" in content:
+            link = content.split("Link:")[1].strip()
+            text = content.split("Link:")[0].strip()
+        else:
+            text = content
+            link = ""
+        doc_texts.append(text)
+        doc_links.append(link)
+
+# Compute embeddings
+embeddings = embed_model.encode(doc_texts, convert_to_numpy=True)
+
+# Save embeddings + meta
+np.save("embeddings.npy", embeddings)
+with open("doc_texts.json", "w") as f:
+    json.dump(doc_texts, f)
+with open("doc_links.json", "w") as f:
+    json.dump(doc_links, f)
+
+print("Embeddings and metadata saved!")
