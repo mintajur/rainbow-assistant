@@ -5,11 +5,14 @@ import pandas as pd
 import plotly.express as px
 from openai import OpenAI
 import os
+import numpy as np
+from sentence_transformers import SentenceTransformer
+import faiss
 
 # --- Initialize OpenAI Client ---
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- MOCK PROJECT DATA ---
+# --- Mock Project Data ---
 projects = [
     {
         "id": 1,
@@ -34,7 +37,7 @@ projects = [
     }
 ]
 
-# --- STREAMLIT UI ---
+# --- Streamlit UI ---
 st.set_page_config(page_title="Rainbow Assistant", layout="wide")
 st.title("🌈 Rainbow Assistant — AI Project Manager & Knowledge Base")
 
@@ -120,7 +123,7 @@ with tabs[2]:
         st.plotly_chart(fig)
 
 # ----------------------
-# 4️⃣ DOCUMENTATION KNOWLEDGE BASE
+# 4️⃣ DOCUMENTATION KNOWLEDGE BASE (SEMANTIC SEARCH)
 # ----------------------
 with tabs[3]:
     st.header("📚 Documentation Knowledge Base")
@@ -128,19 +131,34 @@ with tabs[3]:
     query = st.text_input("Customer Question", "How do I change language on HiStudy?")
     
     if st.button("Search & Generate Reply"):
-        # Simple keyword search
-        matched_text = ""
-        matched_link = ""
+        # Load documents & embeddings
+        embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+        doc_texts, doc_links = [], []
         for file in os.listdir("docs"):
             with open(f"docs/{file}", "r") as f:
                 content = f.read()
-                if all(word.lower() in content.lower() for word in query.split()):
-                    matched_text = content
-                    if "Link:" in content:
-                        matched_link = content.split("Link:")[1].strip()
-                    break
-        if matched_text:
-            prompt = f"""
+                if "Link:" in content:
+                    link = content.split("Link:")[1].strip()
+                    text = content.split("Link:")[0].strip()
+                else:
+                    text = content
+                    link = ""
+                doc_texts.append(text)
+                doc_links.append(link)
+
+        # Create embeddings & FAISS index
+        doc_embeddings = embed_model.encode(doc_texts, convert_to_numpy=True)
+        index = faiss.IndexFlatL2(doc_embeddings.shape[1])
+        index.add(doc_embeddings)
+
+        # Search for closest match
+        query_embedding = embed_model.encode([query], convert_to_numpy=True)
+        D, I = index.search(query_embedding, k=1)
+        matched_text = doc_texts[I[0][0]]
+        matched_link = doc_links[I[0][0]]
+
+        # Generate AI reply
+        prompt = f"""
 You are a helpful support assistant. 
 Documentation section: {matched_text}
 
@@ -148,14 +166,12 @@ Customer question: {query}
 
 Generate a concise and polite reply including the link if available.
 """
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=200
-            )
-            reply = response.choices[0].message.content
-            st.success(reply)
-            if matched_link:
-                st.markdown(f"[📄 View Documentation]({matched_link})")
-        else:
-            st.warning("No matching documentation found.")
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200
+        )
+        reply = response.choices[0].message.content
+        st.success(reply)
+        if matched_link:
+            st.markdown(f"[📄 View Documentation]({matched_link})")
