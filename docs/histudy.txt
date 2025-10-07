@@ -1,3 +1,7 @@
 # Section: Language Settings
 To change the site language, go to WPML → Languages → Add Language.
 Link: https://docs.yoursite.com/histudy/language-settings
+
+# Section: Payment Gateway
+To configure payment options, go to Settings → Payments.
+Link: https://docs.yoursite.com/histudy/payment
