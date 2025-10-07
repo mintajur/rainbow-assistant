@@ -1,19 +1,15 @@
-# rainbow_assistant.py
-
 import streamlit as st
 import json
 from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
-import os
 from openai import OpenAI
+import os
 
-# --- CONFIGURATION ---
-# Set your OpenAI API key as a Streamlit secret or environment variable
-# st.secrets["OPENAI_API_KEY"] = "YOUR_API_KEY"
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# --- Initialize OpenAI Client ---
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# --- MOCK DATA ---
+# --- MOCK PROJECT DATA ---
 projects = [
     {
         "id": 1,
@@ -38,18 +34,7 @@ projects = [
     }
 ]
 
-# Mock documentation files
-docs_folder = "docs"
-os.makedirs(docs_folder, exist_ok=True)
-docs_content = {
-    "histudy.txt": "# Section: Language Settings\nTo change the site language, go to WPML → Languages → Add Language.\nLink: https://docs.yoursite.com/histudy/language-settings\n",
-    "aiwave.txt": "# Section: API Setup\nTo setup AI API, follow the instructions in AIwave dashboard.\nLink: https://docs.yoursite.com/aiwave/api-setup\n"
-}
-for filename, content in docs_content.items():
-    with open(os.path.join(docs_folder, filename), "w") as f:
-        f.write(content)
-
-# --- STREAMLIT LAYOUT ---
+# --- STREAMLIT UI ---
 st.set_page_config(page_title="Rainbow Assistant", layout="wide")
 st.title("🌈 Rainbow Assistant — AI Project Manager & Knowledge Base")
 
@@ -66,7 +51,6 @@ with tabs[0]:
     col2.metric("Pending Tasks", pending_tasks)
     upcoming_deadline = min([datetime.strptime(p["deadline"], "%Y-%m-%d") for p in projects])
     col3.metric("Next Deadline", upcoming_deadline.strftime("%Y-%m-%d"))
-    
     st.write("Use the tabs to explore Assistant, Timeline, and Knowledge Base modules.")
 
 # ----------------------
@@ -147,9 +131,8 @@ with tabs[3]:
         # Simple keyword search
         matched_text = ""
         matched_link = ""
-        for file in os.listdir(docs_folder):
-            path = os.path.join(docs_folder, file)
-            with open(path, "r") as f:
+        for file in os.listdir("docs"):
+            with open(f"docs/{file}", "r") as f:
                 content = f.read()
                 if all(word.lower() in content.lower() for word in query.split()):
                     matched_text = content
