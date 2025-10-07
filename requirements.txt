@@ -1,7 +1,8 @@
 streamlit
-openai
 pandas
 plotly
 sentence-transformers
 faiss-cpu
 numpy
+transformers
+torch
