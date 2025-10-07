@@ -1,3 +1,7 @@
 # Section: API Setup
-To setup AI API, follow the instructions in AIwave dashboard.
+To setup the AI API, go to Settings → API Keys → Add Key.
 Link: https://docs.yoursite.com/aiwave/api-setup
+
+# Section: Dashboard
+The dashboard shows usage stats and AI insights.
+Link: https://docs.yoursite.com/aiwave/dashboard
