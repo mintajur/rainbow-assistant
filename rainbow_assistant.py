@@ -1,38 +1,19 @@
+# rainbow_assistant.py
+
 import streamlit as st
 import json
 from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
 import os
-import numpy as np
-import faiss
-from sentence_transformers import SentenceTransformer
-from transformers import pipeline
-import torch
+from openai import OpenAI
 
-# Force CPU and disable multiprocessing
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-torch.set_default_device("cpu")
+# --- CONFIGURATION ---
+# Set your OpenAI API key as a Streamlit secret or environment variable
+# st.secrets["OPENAI_API_KEY"] = "YOUR_API_KEY"
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# -------------------------------
-# Hugging Face API Key from Streamlit Secrets
-# -------------------------------
-HF_API_KEY = st.secrets.get("HF_API_KEY", "No key found")
-st.write(f"HF_API_KEY: {HF_API_KEY[:6]}...")
-
-# Cache text-generation pipeline
-@st.cache_resource
-def load_generator():
-    return pipeline(
-        "text-generation",
-        model="distilgpt2",
-        token=HF_API_KEY,
-    )
-generator = load_generator()
-
-# -------------------------------
-# Mock Project Data
-# -------------------------------
+# --- MOCK DATA ---
 projects = [
     {
         "id": 1,
@@ -57,17 +38,26 @@ projects = [
     }
 ]
 
-# -------------------------------
-# Streamlit Page Setup
-# -------------------------------
+# Mock documentation files
+docs_folder = "docs"
+os.makedirs(docs_folder, exist_ok=True)
+docs_content = {
+    "histudy.txt": "# Section: Language Settings\nTo change the site language, go to WPML → Languages → Add Language.\nLink: https://docs.yoursite.com/histudy/language-settings\n",
+    "aiwave.txt": "# Section: API Setup\nTo setup AI API, follow the instructions in AIwave dashboard.\nLink: https://docs.yoursite.com/aiwave/api-setup\n"
+}
+for filename, content in docs_content.items():
+    with open(os.path.join(docs_folder, filename), "w") as f:
+        f.write(content)
+
+# --- STREAMLIT LAYOUT ---
 st.set_page_config(page_title="Rainbow Assistant", layout="wide")
 st.title("🌈 Rainbow Assistant — AI Project Manager & Knowledge Base")
 
 tabs = st.tabs(["🏠 Dashboard", "🤖 Project Assistant", "📅 Timeline Generator", "📚 Knowledge Base"])
 
-# -------------------------------
+# ----------------------
 # 1️⃣ DASHBOARD
-# -------------------------------
+# ----------------------
 with tabs[0]:
     st.header("Dashboard Overview")
     col1, col2, col3 = st.columns(3)
@@ -76,11 +66,12 @@ with tabs[0]:
     col2.metric("Pending Tasks", pending_tasks)
     upcoming_deadline = min([datetime.strptime(p["deadline"], "%Y-%m-%d") for p in projects])
     col3.metric("Next Deadline", upcoming_deadline.strftime("%Y-%m-%d"))
+    
     st.write("Use the tabs to explore Assistant, Timeline, and Knowledge Base modules.")
 
-# -------------------------------
+# ----------------------
 # 2️⃣ PROJECT & SUPPORT ASSISTANT
-# -------------------------------
+# ----------------------
 with tabs[1]:
     st.header("🤖 Project & Support AI Assistant")
     project_options = [p["name"] for p in projects]
@@ -103,16 +94,17 @@ Customer question: {user_query}
 
 Generate a polite, professional reply.
 """
-        try:
-            with st.spinner("Generating reply..."):
-                response = generator(prompt, max_new_tokens=50)
-                st.success(response[0]['generated_text'])
-        except Exception as e:
-            st.error(f"Error generating reply: {str(e)}")
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200
+        )
+        reply = response.choices[0].message.content
+        st.success(reply)
 
-# -------------------------------
+# ----------------------
 # 3️⃣ SMART TIMELINE GENERATOR
-# -------------------------------
+# ----------------------
 with tabs[2]:
     st.header("📅 Smart Timeline Generator")
     features = st.text_area("List Project Features (comma separated)", "Landing Page, API, Dashboard")
@@ -140,60 +132,32 @@ with tabs[2]:
         st.table(df_timeline)
         
         # Gantt chart
-        fig = px.timeline(df_timeline, x_start="Start", x_end="End", y="Phase")
-        fig.update_layout(showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        fig = px.timeline(df_timeline, x_start="Start", x_end="End", y="Phase", color="Phase")
+        st.plotly_chart(fig)
 
-# -------------------------------
+# ----------------------
 # 4️⃣ DOCUMENTATION KNOWLEDGE BASE
-# -------------------------------
+# ----------------------
 with tabs[3]:
     st.header("📚 Documentation Knowledge Base")
     st.subheader("Ask a question based on documentation")
     query = st.text_input("Customer Question", "How do I change language on HiStudy?")
     
-    # Cache docs
-    @st.cache_data
-    def load_docs():
-        doc_texts = []
-        doc_links = []
-        doc_files = [f for f in os.listdir("docs") if f.endswith(".txt")]
-        for file in doc_files:
-            with open(f"docs/{file}", "r") as f:
-                content = f.read()
-                if "Link:" in content:
-                    link = content.split("Link:")[1].strip()
-                    text = content.split("Link:")[0].strip()
-                else:
-                    text = content
-                    link = ""
-                doc_texts.append(text)
-                doc_links.append(link)
-        return doc_texts, doc_links
-    doc_texts, doc_links = load_docs()
-    
-    # Cache embedding model
-    @st.cache_resource
-    def load_embed_model():
-        return SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-    embed_model = load_embed_model()
-    
-    # Compute embeddings
-    doc_embeddings = embed_model.encode(doc_texts, batch_size=8, convert_to_numpy=True)
-    
-    # FAISS index
-    index = faiss.IndexFlatL2(doc_embeddings.shape[1])
-    index.add(doc_embeddings)
-    
     if st.button("Search & Generate Reply"):
-        try:
-            with st.spinner("Searching and generating reply..."):
-                query_embedding = embed_model.encode([query], convert_to_numpy=True)
-                D, I = index.search(query_embedding, k=1)
-                matched_text = doc_texts[I[0][0]]
-                matched_link = doc_links[I[0][0]]
-                
-                prompt = f"""
+        # Simple keyword search
+        matched_text = ""
+        matched_link = ""
+        for file in os.listdir(docs_folder):
+            path = os.path.join(docs_folder, file)
+            with open(path, "r") as f:
+                content = f.read()
+                if all(word.lower() in content.lower() for word in query.split()):
+                    matched_text = content
+                    if "Link:" in content:
+                        matched_link = content.split("Link:")[1].strip()
+                    break
+        if matched_text:
+            prompt = f"""
 You are a helpful support assistant. 
 Documentation section: {matched_text}
 
@@ -201,9 +165,14 @@ Customer question: {query}
 
 Generate a concise and polite reply including the link if available.
 """
-                response = generator(prompt, max_new_tokens=50)
-                st.success(response[0]['generated_text'])
-                if matched_link:
-                    st.markdown(f"[📄 View Documentation]({matched_link})")
-        except Exception as e:
-            st.error(f"Error in Knowledge Base: {str(e)}")
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200
+            )
+            reply = response.choices[0].message.content
+            st.success(reply)
+            if matched_link:
+                st.markdown(f"[📄 View Documentation]({matched_link})")
+        else:
+            st.warning("No matching documentation found.")
