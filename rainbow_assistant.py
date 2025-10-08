@@ -8,6 +8,9 @@ import plotly.express as px
 import os
 from openai import OpenAI
 
+st.write("🔐 API Key Loaded:", bool(os.environ.get("OPENAI_API_KEY")))
+
+
 # --- CONFIGURATION ---
 # Set your OpenAI API key as a Streamlit secret or environment variable
 # st.secrets["OPENAI_API_KEY"] = "YOUR_API_KEY"
@@ -176,3 +179,4 @@ Generate a concise and polite reply including the link if available.
                 st.markdown(f"[📄 View Documentation]({matched_link})")
         else:
             st.warning("No matching documentation found.")
+
